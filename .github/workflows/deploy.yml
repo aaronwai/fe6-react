@@ -1,39 +1,68 @@
+# Workflow display name (shows on GitHub Actions page)
+# Human readable name for this workflow. You’ll see this name listed under your repo → Actions tab.
 name: Deploy to GitHub Pages
+# Trigger rules: when should this workflow run?
 on:
-    push:
-        branches: [main]
-    workflow_dispatch:
-
+  # Defines **event triggers** to start the workflow.
+  push:
+    # Only run when code is pushed to the `main` branch. Pushes to other branches won’t trigger this.
+    branches: [main]
+  # Manual trigger. Adds a **Run workflow** button on GitHub Actions page so you can run this job manually anytime, without pushing code.
+  workflow_dispatch:
+# Permissions granted to this workflow runner
 permissions:
-    contents: read
-    pages: write
-    id-token: write
-
+  # Fine-grained OAuth token permissions for the GitHub Actions runner token.
+  # Allow reading repository code (checkout source files).
+  contents: read
+  # Required permission to upload artifacts and publish GitHub Pages site.
+  pages: write
+  # Needed for OIDC authentication for secure GitHub Pages deployment (required by `actions/deploy-pages@v4`).
+  id-token: write
+# Controls parallel runs of the same workflow.
 concurrency:
-    group: pages
-    cancel-in-progress: true
+  # Group all workflow runs under the named group `pages`.
+  group: pages
+  # If a new deployment starts, **cancel any already-running older deployment**. Useful: Prevent race conditions, avoid multiple overlapping builds trying to publish pages at the same time.
+  cancel-in-progress: true
 
+# Define jobs. This workflow has two jobs: build and deploy Jobs run in parallel by default unless `needs:` is used.
 jobs:
-    build:
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v4
-            - uses: actions/configure-pages@v5
-            - uses: actions/setup-node@v4
-              with:
-                node-version: 22
-                cache: npm
-            - run: npm ci
-            - run: npm run build
-            - uses: actions/upload-pages-artifact@v4
-              with:
-                path: dist
+  # Job ID (name of this job, referenced later by `needs`).
+  build:
+    # Use GitHub-hosted runner with latest Ubuntu Linux virtual machine to execute this job.
+    runs-on: ubuntu-latest
+    # Sequence of individual tasks inside this `build` job, executed top-to-bottom.
+    steps:
+      # Pull a pre-built GitHub Action from GitHub Marketplace.
+      # Checks out (downloads) your repository source code into the runner VM. Without this, runner has none of your project files. `v4` = version tag of this action.
+      - uses: actions/checkout@v4
+      # Sets up environment variables and git configuration required for GitHub Pages deployment. It auto-detects Pages settings in your repo and prepares metadata for later upload/deploy actions.
+      - uses: actions/configure-pages@v5
+      # Install Node.js runtime on the runner machine.
+      - uses: actions/setup-node@v4
+        # Input parameters for this action.
+        with:
+          node-version: 22
+          # Enables npm dependency caching. It saves downloaded `node_modules` cache between workflow runs to speed up subsequent builds.
+          cache: npm
+      # Execute shell command on runner. Clean install of dependencies. Uses `package-lock.json` strictly, installs exact versions, deletes existing `node_modules`. Prefer over `npm install` for CI builds for consistency.
+      - run: npm ci
+      # Runs your build script defined in `package.json`. For Vite / Vue / React, this compiles source code and outputs static assets into `dist/` folder.
+      - run: npm run build
+      # Upload your built static files as a GitHub Pages artifact
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
 
-    deploy:
-        needs: build
-        runs-on: ubuntu-latest
-        environment:
-            name: github-pages
-        steps:
-          - id: deployment  
-            uses: actions/deploy-pages@v4
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # Attach this job to GitHub’s built-in `github-pages` protected environment. GitHub Pages deployment **requires this environment** for proper security & deployment gatekeeping. You can add manual approval rules to this environment in repo settings if needed.
+    environment:
+      name: github-pages
+    # Tasks for deploy job.
+    steps:
+      # Give this step an ID so you can reference outputs of this action later (e.g. deployment URL). Optional but common practice.
+      - id: deployment
+        # akes the Pages artifact uploaded by `upload-pages-artifact` from build job and publishes it live to GitHub Pages.
+        uses: actions/deploy-pages@v4
